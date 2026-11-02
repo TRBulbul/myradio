@@ -48,7 +48,7 @@ small{color:var(--mu)}
   <div class="title" id="ttl">Waiting for the show to start…</div>
   <button class="big" id="play">▶ Listen Live</button>
   <div class="row"><label>Volume<input type="range" id="lv" min="0" max="1" step="0.01" value="1"></label></div>
-  <audio id="au" autoplay></audio>
+  <audio id="au" autoplay playsinline></audio>
 </section>
 
 <!-- DJ PANEL -->
@@ -89,9 +89,12 @@ small{color:var(--mu)}
 /* ===== SETTINGS: change these ===== */
 const C={
   name:"My Live Radio",
-  id:"MyLiveRadio_123_Bhootfm",   // make this unique (letters, numbers, - _), same for DJ and listeners
+  id:"myradio-change-this-id",   // make this unique (letters, numbers, - _), same for DJ and listeners
   djHash:"ad5569b49703d11a572c3b6982c9d05adaaf5d62e1998cb82a31b8e494307012", // SHA-256 of passcode "radio123"
-  ice:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]
+  ice:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"},
+       {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
+       {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
+       {urls:"turns:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}]
 };
 /* ================================== */
 const $=s=>document.querySelector(s), isDJ=location.hash==="#dj";
