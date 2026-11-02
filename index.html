@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Radio</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--tx:#f1f1f1;--mu:#8b93a3;--ac:#ff4d5e;--ok:#2ecc71}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+main{max-width:720px;margin:0 auto;padding:20px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:1.6rem}
+.badge{padding:6px 14px;border-radius:99px;background:#2a2e38;color:var(--mu);font-weight:700;font-size:.85rem}
+.badge.on{background:var(--ac);color:#fff;animation:p 1.4s infinite}
+@keyframes p{50%{opacity:.6}}
+.card{background:var(--card);border-radius:16px;padding:18px;margin-top:16px}
+.title{font-size:1.15rem;margin:6px 0 14px;color:var(--mu)}
+button{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-size:1rem;cursor:pointer}
+button.alt{background:#2a2e38}button.on{background:var(--ok)}
+.big{width:100%;padding:18px;font-size:1.3rem;border-radius:14px}
+input[type=text],input[type=password]{background:#0f1115;border:1px solid #2a2e38;color:var(--tx);border-radius:8px;padding:10px;width:100%}
+input[type=range]{width:100%}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.row>*{flex:1}
+label{font-size:.85rem;color:var(--mu);display:block}
+.meter{height:10px;background:#2a2e38;border-radius:5px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),#f1c40f,var(--ac))}
+#chat{height:200px;overflow:auto;background:#0f1115;border-radius:8px;padding:10px;font-size:.92rem}
+#chat p{margin:0 0 6px}#chat b{color:var(--ac)}
+ol{padding-left:20px;margin:8px 0;max-height:140px;overflow:auto;font-size:.9rem}
+li.cur{color:var(--ok)}
+audio{width:100%;margin-top:8px}
+small{color:var(--mu)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>📻 <span id="sn"></span></h1>
+  <div><span class="badge" id="badge">OFFLINE</span> <span class="badge">👥 <span id="cnt">0</span></span></div>
+</header>
+
+<!-- LISTENER -->
+<section id="L" class="card">
+  <div class="title" id="ttl">Waiting for the show to start…</div>
+  <button class="big" id="play">▶ Listen Live</button>
+  <div class="row"><label>Volume<input type="range" id="lv" min="0" max="1" step="0.01" value="1"></label></div>
+  <audio id="au" autoplay></audio>
+</section>
+
+<!-- DJ PANEL -->
+<section id="D" class="hide">
+  <div class="card" id="gate">
+    <label>DJ passcode<input type="password" id="pw" placeholder="Enter passcode"></label>
+    <div class="row"><button id="enter">Enter DJ Panel</button></div>
+  </div>
+  <div class="card hide" id="panel">
+    <label>Show title<input type="text" id="title" placeholder="e.g. Midnight Talk Show"></label>
+    <div class="row"><button id="live" class="big">🔴 Go Live</button></div>
+    <div class="row">
+      <button id="mic" class="alt">🎤 Mic: OFF</button>
+      <button id="tab" class="alt">🖥 Share tab/system audio</button>
+    </div>
+    <div class="row"><label>Mic volume<input type="range" id="mv" min="0" max="2" step="0.01" value="1"></label>
+    <label>Music volume<input type="range" id="muv" min="0" max="1" step="0.01" value="0.8"></label></div>
+    <label style="margin-top:12px"><input type="checkbox" id="duck" checked> Auto-lower music while mic is ON</label>
+    <div style="margin-top:12px"><label>Broadcast level</label><div class="meter"><i id="lvl"></i></div></div>
+    <hr style="border-color:#2a2e38;margin:16px 0">
+    <label>Music playlist (choose audio files)<input type="file" id="files" accept="audio/*" multiple></label>
+    <ol id="pl"></ol>
+    <audio id="mp" controls></audio>
+    <div class="row"><button id="next" class="alt">⏭ Next track</button></div>
+    <small>Use headphones so your mic doesn't pick up the speakers. Keep this tab open while live.</small>
+  </div>
+</section>
+
+<!-- CHAT -->
+<section class="card">
+  <div id="chat"></div>
+  <div class="row"><input type="text" id="nick" placeholder="Your name" maxlength="20" style="max-width:140px">
+  <input type="text" id="msg" placeholder="Say hi to the show…" maxlength="300"><button id="send" style="flex:0">Send</button></div>
+</section>
+</main>
+
+<script>
+/* ===== SETTINGS: change these ===== */
+const C={
+  name:"My Live Radio",
+  id:"MyLiveRadio_123_Bhootfm",   // make this unique (letters, numbers, - _), same for DJ and listeners
+  djHash:"ad5569b49703d11a572c3b6982c9d05adaaf5d62e1998cb82a31b8e494307012", // SHA-256 of passcode "radio123"
+  ice:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]
+};
+/* ================================== */
+const $=s=>document.querySelector(s), isDJ=location.hash==="#dj";
+$("#sn").textContent=C.name; document.title=C.name;
+$("#nick").value=localStorage.getItem("nick")||"";
+const sha=async t=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,"0")).join("");
+function setLive(v,t){const b=$("#badge");b.className="badge"+(v?" on":"");b.textContent=v?"ON AIR":"OFFLINE";
+  $("#ttl").textContent=v?(t||"Live now"):"Waiting for the show to start…"}
+function addMsg(m){const p=document.createElement("p"),b=document.createElement("b");b.textContent=m.n+": ";p.append(b,document.createTextNode(m.m));
+  const c=$("#chat");c.append(p);c.scrollTop=c.scrollHeight}
+$("#nick").onchange=()=>localStorage.setItem("nick",$("#nick").value);
+const cfg={config:{iceServers:C.ice}};
+
+/* ---------- LISTENER ---------- */
+const au=$("#au");let want=false,lconn=null;
+function listen(){
+  const p=new Peer(cfg), retry=()=>{try{p.destroy()}catch(e){}setLive(false);au.srcObject=null;setTimeout(listen,5000)};
+  p.on("open",()=>{lconn=p.connect(C.id,{reliable:true});
+    lconn.on("data",d=>{if(d.t==="info"){setLive(d.live,d.title);if(!d.live)au.srcObject=null}
+      else if(d.t==="count")$("#cnt").textContent=d.n; else if(d.t==="chat")addMsg(d)});
+    lconn.on("close",retry)});
+  p.on("error",retry);
+  p.on("call",c=>{c.answer();c.on("stream",s=>{au.srcObject=s;if(want)au.play().catch(()=>{})})});
+}
+$("#play").onclick=()=>{want=!want;$("#play").textContent=want?"⏸ Stop listening":"▶ Listen Live";
+  $("#play").className="big"+(want?" alt":"");want?au.play().catch(()=>{}):au.pause()};
+$("#lv").oninput=e=>au.volume=e.target.value;
+$("#send").onclick=sendChat;$("#msg").onkeydown=e=>{if(e.key==="Enter")sendChat()};
+function sendChat(){const m=$("#msg").value.trim();if(!m)return;$("#msg").value="";
+  if(isDJ&&peer){const d={t:"chat",n:"🎙 DJ",m};addMsg(d);bc(d)}
+  else if(lconn&&lconn.open)lconn.send({t:"chat",n:$("#nick").value||"Listener",m})}
+
+/* ---------- DJ ---------- */
+let peer=null,live=false,calls=[],conns=new Set(),ctx,dest,mg,kg,tg,micOn=false,micReady=false,list=[],idx=-1;
+const bc=m=>conns.forEach(c=>c.open&&c.send(m));
+const info=()=>({t:"info",live,title:$("#title").value});
+if(isDJ){$("#L").classList.add("hide");$("#D").classList.remove("hide")}else listen();
+
+$("#enter").onclick=async()=>{if(await sha($("#pw").value)!==C.djHash)return alert("Wrong passcode");
+  $("#gate").classList.add("hide");$("#panel").classList.remove("hide");initAudio()};
+$("#pw").onkeydown=e=>{if(e.key==="Enter")$("#enter").click()};
+
+function initAudio(){
+  ctx=new AudioContext();dest=ctx.createMediaStreamDestination();
+  mg=ctx.createGain();kg=ctx.createGain();tg=ctx.createGain();const mix=ctx.createGain(),an=ctx.createAnalyser();
+  kg.gain.value=0;mg.gain.value=+$("#muv").value;
+  [mg,kg,tg].forEach(g=>g.connect(mix));mix.connect(dest);mix.connect(an);
+  const ms=ctx.createMediaElementSource($("#mp"));ms.connect(mg);ms.connect(ctx.destination); // DJ hears music
+  const buf=new Uint8Array(an.fftSize);
+  (function loop(){an.getByteTimeDomainData(buf);let pk=0;for(const v of buf)pk=Math.max(pk,Math.abs(v-128));
+    $("#lvl").style.width=Math.min(100,pk/128*140)+"%";requestAnimationFrame(loop)})();
+  $("#mp").onended=next;
+}
+function duck(){const v=+$("#muv").value;mg.gain.setTargetAtTime(micOn&&$("#duck").checked?v*.2:v,ctx.currentTime,.25)}
+$("#muv").oninput=duck;$("#duck").onchange=duck;
+$("#mv").oninput=()=>{if(micOn)kg.gain.value=+$("#mv").value};
+
+$("#mic").onclick=async()=>{
+  if(!micReady){try{const s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    ctx.createMediaStreamSource(s).connect(kg);micReady=true}catch(e){return alert("Mic access denied: "+e.message)}}
+  micOn=!micOn;kg.gain.value=micOn?+$("#mv").value:0;
+  $("#mic").textContent="🎤 Mic: "+(micOn?"ON":"OFF");$("#mic").className=micOn?"on":"alt";duck()};
+
+$("#tab").onclick=async()=>{try{
+  const s=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+  const a=s.getAudioTracks();s.getVideoTracks().forEach(t=>t.stop());
+  if(!a.length)return alert("No audio shared. Choose a Chrome tab (or entire screen on Windows) and tick 'Share audio'.");
+  ctx.createMediaStreamSource(new MediaStream(a)).connect(tg);$("#tab").className="on";$("#tab").textContent="🖥 Tab audio ON"}catch(e){}};
+
+$("#files").onchange=e=>{list=[...e.target.files];renderPL();if(idx<0&&list.length)play(0)};
+function renderPL(){$("#pl").innerHTML="";list.forEach((f,i)=>{const li=document.createElement("li");li.textContent=f.name;
+  li.style.cursor="pointer";li.className=i===idx?"cur":"";li.onclick=()=>play(i);$("#pl").append(li)})}
+function play(i){if(!list.length)return;idx=i%list.length;ctx.resume();$("#mp").src=URL.createObjectURL(list[idx]);$("#mp").play();renderPL()}
+function next(){play(idx+1)}$("#next").onclick=next;
+
+function startPeer(){
+  peer=new Peer(C.id,cfg);
+  peer.on("error",e=>{if(e.type==="unavailable-id"){alert("This station ID is already live (another tab?).");peer=null;live=false;ui()}else console.warn(e)});
+  peer.on("open",()=>{live=true;ui();bc(info());conns.forEach(c=>callOne(c.peer))});
+  peer.on("connection",c=>{
+    c.on("open",()=>{conns.add(c);c.send(info());count();if(live)callOne(c.peer)});
+    c.on("data",d=>{if(d.t==="chat"){const m={t:"chat",n:String(d.n).slice(0,20),m:String(d.m).slice(0,300)};addMsg(m);bc(m)}});
+    c.on("close",()=>{conns.delete(c);count()});
+  });
+}
+function callOne(id){if(!live||!peer)return;
+  calls.push(peer.call(id,dest.stream,{sdpTransform:s=>s.replace("useinbandfec=1","useinbandfec=1;stereo=1;maxaveragebitrate=96000")}))}
+function count(){$("#cnt").textContent=conns.size;bc({t:"count",n:conns.size})}
+function ui(){const b=$("#live");b.textContent=live?"⏹ End Show":"🔴 Go Live";b.className="big"+(live?" alt":"");setLive(live,$("#title").value)}
+$("#live").onclick=()=>{ctx.resume();
+  if(live){live=false;calls.forEach(c=>c.close());calls=[];bc(info());ui();return}
+  if(peer){live=true;ui();bc(info());conns.forEach(c=>callOne(c.peer))}else startPeer()};
+$("#title").onchange=()=>{bc(info());if(live)setLive(true,$("#title").value)};
+</script>
+</body>
+</html>
